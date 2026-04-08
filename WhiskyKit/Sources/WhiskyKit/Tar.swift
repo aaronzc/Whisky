@@ -47,7 +47,16 @@ public class Tar {
         let pipe = Pipe()
 
         process.executableURL = tarBinary
-        process.arguments = ["-xzf", "\(tarBall.path)", "-C", "\(toURL.path)"]
+        let pathLowercased = tarBall.path.lowercased()
+        let flags: [String]
+        if pathLowercased.hasSuffix(".tar.xz") || pathLowercased.hasSuffix(".txz") {
+            flags = ["-xJf"]
+        } else if pathLowercased.hasSuffix(".tar.gz") || pathLowercased.hasSuffix(".tgz") {
+            flags = ["-xzf"]
+        } else {
+            flags = ["-xf"]
+        }
+        process.arguments = flags + ["\(tarBall.path)", "-C", "\(toURL.path)"]
         process.standardOutput = pipe
         process.standardError = pipe
 

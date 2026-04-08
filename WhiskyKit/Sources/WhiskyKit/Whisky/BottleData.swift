@@ -91,6 +91,7 @@ public struct BottleData: Codable {
 
         do {
             try FileManager.default.createDirectory(at: Self.containerDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: Self.defaultBottleDir, withIntermediateDirectories: true)
             let data = try encoder.encode(self)
             try data.write(to: Self.bottleEntriesDir)
             return true

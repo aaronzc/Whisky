@@ -107,7 +107,9 @@ struct PinCreationView: View {
             return
         }
 
-        bottle.settings.pins.append(PinnedProgram(name: newPinName, url: newPinURL))
+        var updatedSettings = bottle.settings
+        updatedSettings.pins.append(PinnedProgram(name: newPinName, url: newPinURL))
+        bottle.settings = updatedSettings
 
         // Trigger a reload
         bottle.updateInstalledPrograms()

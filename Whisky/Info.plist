@@ -57,6 +57,10 @@
 	<string>https://data.getwhisky.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>tnZFAvPUfCpM7Tr7Sx5gKRm6BUQQ6htJQeOMP44evms=</string>
+	<key>WhiskyWineDownloadURL</key>
+	<string>https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.6/wine-devel-11.6-osx64.tar.xz</string>
+	<key>WhiskyWineVersionPlistURL</key>
+	<string>https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.6/WhiskyWineVersion.plist</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

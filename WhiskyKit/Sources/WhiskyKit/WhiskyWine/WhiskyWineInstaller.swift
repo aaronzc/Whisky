@@ -20,6 +20,23 @@ import Foundation
 import SemanticVersion
 
 public class WhiskyWineInstaller {
+    private static let defaultDownloadURL = "https://data.getwhisky.app/Wine/Libraries.tar.gz"
+    private static let defaultVersionPlistURL = "https://data.getwhisky.app/Wine/WhiskyWineVersion.plist"
+
+    private static func bundledString(forKey key: String) -> String? {
+        return Bundle.main.object(forInfoDictionaryKey: key) as? String
+    }
+
+    public static func whiskyWineDownloadURL() -> URL? {
+        let urlString = bundledString(forKey: "WhiskyWineDownloadURL") ?? defaultDownloadURL
+        return URL(string: urlString)
+    }
+
+    public static func whiskyWineVersionPlistURL() -> URL? {
+        let urlString = bundledString(forKey: "WhiskyWineVersionPlistURL") ?? defaultVersionPlistURL
+        return URL(string: urlString)
+    }
+
     /// The Whisky application folder
     public static let applicationFolder = FileManager.default.urls(
         for: .applicationSupportDirectory, in: .userDomainMask
@@ -46,6 +63,7 @@ public class WhiskyWineInstaller {
             }
 
             try Tar.untar(tarBall: from, toURL: applicationFolder)
+            try normalizeWineInstall()
             try FileManager.default.removeItem(at: from)
         } catch {
             print("Failed to install WhiskyWine: \(error)")
@@ -61,12 +79,11 @@ public class WhiskyWineInstaller {
     }
 
     public static func shouldUpdateWhiskyWine() async -> (Bool, SemanticVersion) {
-        let versionPlistURL = "https://data.getwhisky.app/Wine/WhiskyWineVersion.plist"
         let localVersion = whiskyWineVersion()
 
         var remoteVersion: SemanticVersion?
 
-        if let remoteUrl = URL(string: versionPlistURL) {
+        if let remoteUrl = whiskyWineVersionPlistURL() {
             remoteVersion = await withCheckedContinuation { continuation in
                 URLSession(configuration: .ephemeral).dataTask(with: URLRequest(url: remoteUrl)) { data, _, error in
                     do {
@@ -113,6 +130,94 @@ public class WhiskyWineInstaller {
             print(error)
             return nil
         }
+    }
+
+    private static func normalizeWineInstall() throws {
+        if !FileManager.default.fileExists(atPath: libraryFolder.path) {
+            try FileManager.default.createDirectory(at: libraryFolder, withIntermediateDirectories: true)
+        }
+
+        let wineDir = libraryFolder.appending(path: "Wine")
+        if !FileManager.default.fileExists(atPath: wineDir.path) {
+            if let appWineDir = findWineAppResources() {
+                // Move the embedded wine directory into Libraries/Wine
+                try FileManager.default.moveItem(at: appWineDir, to: wineDir)
+            }
+        }
+
+        // Ensure wine64 entry points exist (Whisky expects wine64)
+        let wineBin = wineDir.appending(path: "bin")
+        let wine = wineBin.appending(path: "wine")
+        let wine64 = wineBin.appending(path: "wine64")
+        let wine64Preloader = wineBin.appending(path: "wine64-preloader")
+
+        if FileManager.default.fileExists(atPath: wine.path) {
+            if !FileManager.default.fileExists(atPath: wine64.path) {
+                try FileManager.default.createSymbolicLink(at: wine64, withDestinationURL: wine)
+            }
+            if !FileManager.default.fileExists(atPath: wine64Preloader.path) {
+                try FileManager.default.createSymbolicLink(at: wine64Preloader, withDestinationURL: wine)
+            }
+        }
+
+        if whiskyWineVersion() == nil, FileManager.default.fileExists(atPath: wine64.path) {
+            try writeWhiskyWineVersion(from: wine64)
+        }
+    }
+
+    private static func findWineAppResources() -> URL? {
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: applicationFolder,
+                                                                      includingPropertiesForKeys: nil)
+            for url in contents where url.pathExtension == "app" {
+                let candidate = url.appending(path: "Contents")
+                    .appending(path: "Resources")
+                    .appending(path: "wine")
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        } catch {
+            print("Failed to scan for Wine app resources: \(error)")
+        }
+        return nil
+    }
+
+    private static func writeWhiskyWineVersion(from wineBinary: URL) throws {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = wineBinary
+        process.arguments = ["--version"]
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+
+        let data = try pipe.fileHandleForReading.readToEnd() ?? Data()
+        process.waitUntilExit()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        let versionString = parseWineVersion(output: output)
+        let version = SemanticVersion(versionString) ?? SemanticVersion(0, 0, 0)
+
+        let info = WhiskyWineVersion(version: version)
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .xml
+        let plistData = try encoder.encode(info)
+        let versionPlist = libraryFolder
+            .appending(path: "WhiskyWineVersion")
+            .appendingPathExtension("plist")
+        try plistData.write(to: versionPlist)
+    }
+
+    private static func parseWineVersion(output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = trimmed.range(of: "wine-") {
+            let after = trimmed[range.upperBound...]
+            if let space = after.firstIndex(where: { $0.isWhitespace }) {
+                return String(after[..<space])
+            }
+            return String(after)
+        }
+        return trimmed
     }
 }
 

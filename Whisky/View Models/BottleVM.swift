@@ -43,6 +43,7 @@ final class BottleVM: ObservableObject, @unchecked Sendable {
         Task.detached {
             var bottleId: Bottle?
             do {
+                try FileManager.default.createDirectory(at: bottleURL, withIntermediateDirectories: true)
                 try FileManager.default.createDirectory(atPath: newBottleDir.path(percentEncoded: false),
                                                         withIntermediateDirectories: true)
                 let bottle = Bottle(bottleUrl: newBottleDir, inFlight: true)
@@ -57,6 +58,10 @@ final class BottleVM: ObservableObject, @unchecked Sendable {
                 try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
                 let wineVer = try await Wine.wineVersion()
                 bottle.settings.wineVersion = SemanticVersion(wineVer) ?? SemanticVersion(0, 0, 0)
+                await MainActor.run {
+                    bottle.inFlight = false
+                    bottle.isAvailable = true
+                }
                 // Add record
                 await MainActor.run {
                     self.bottlesList.paths.append(newBottleDir)
