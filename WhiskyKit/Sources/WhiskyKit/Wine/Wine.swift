@@ -35,7 +35,11 @@ public class Wine {
 
     /// Run a process on a executable file given by the `executableURL`
     private static func runProcess(
-        name: String? = nil, args: [String], environment: [String: String], executableURL: URL, directory: URL? = nil,
+        name: String? = nil,
+        args: [String],
+        environment: [String: String],
+        executableURL: URL,
+        directory: URL? = nil,
         fileHandle: FileHandle?
     ) throws -> AsyncStream<ProcessOutput> {
         let process = Process()
@@ -52,11 +56,18 @@ public class Wine {
 
     /// Run a `wine` process with the given arguments and environment variables returning a stream of output
     private static func runWineProcess(
-        name: String? = nil, args: [String], environment: [String: String] = [:],
+        name: String? = nil,
+        args: [String],
+        environment: [String: String] = [:],
+        directory: URL? = nil,
         fileHandle: FileHandle?
     ) throws -> AsyncStream<ProcessOutput> {
         return try runProcess(
-            name: name, args: args, environment: environment, executableURL: wineBinary,
+            name: name,
+            args: args,
+            environment: environment,
+            executableURL: wineBinary,
+            directory: directory,
             fileHandle: fileHandle
         )
     }
@@ -74,7 +85,11 @@ public class Wine {
 
     /// Run a `wine` process with the given arguments and environment variables returning a stream of output
     public static func runWineProcess(
-        name: String? = nil, args: [String], bottle: Bottle, environment: [String: String] = [:]
+        name: String? = nil,
+        args: [String],
+        bottle: Bottle,
+        environment: [String: String] = [:],
+        directory: URL? = nil
     ) throws -> AsyncStream<ProcessOutput> {
         let fileHandle = try makeFileHandle()
         fileHandle.writeApplicaitonInfo()
@@ -83,6 +98,7 @@ public class Wine {
         return try runWineProcess(
             name: name, args: args,
             environment: constructWineEnvironment(for: bottle, environment: environment),
+            directory: directory,
             fileHandle: fileHandle
         )
     }
@@ -118,36 +134,70 @@ public class Wine {
     }
 
     public static func runConsole(bottle: Bottle) async throws {
+        try await runConsole(bottle: bottle, startupCommand: nil)
+    }
+
+    public static func runConsole(
+        bottle: Bottle,
+        startupCommand: String?,
+        environment: [String: String] = [:],
+        directory: URL? = nil
+    ) async throws {
         let env = ["WINEDEBUG": "-all"]
+        let args = consoleArgs(startupCommand: startupCommand)
+        let mergedEnv = constructWineEnvironment(for: bottle, environment: env.merging(environment) { $1 })
         for await _ in try Self.runWineProcess(
             name: "wineconsole",
-            args: ["wineconsole", "cmd"],
+            args: args,
             bottle: bottle,
-            environment: env
+            environment: mergedEnv,
+            directory: directory
         ) { }
     }
 
     public static func launchConsole(bottle: Bottle) async throws {
+        try await launchConsole(bottle: bottle, startupCommand: nil)
+    }
+
+    public static func launchConsole(
+        bottle: Bottle,
+        startupCommand: String?,
+        environment: [String: String] = [:],
+        directory: URL? = nil
+    ) async throws {
         let env = ["WINEDEBUG": "-all"]
+        let args = consoleArgs(startupCommand: startupCommand)
+        let mergedEnv = constructWineEnvironment(for: bottle, environment: env.merging(environment) { $1 })
         try await launchWineProcess(
             name: "wineconsole",
-            args: ["wineconsole", "cmd"],
+            args: args,
             bottle: bottle,
-            environment: env
+            environment: mergedEnv,
+            directory: directory
         )
+    }
+
+    private static func consoleArgs(startupCommand: String?) -> [String] {
+        var args = ["wineconsole", "cmd"]
+        if let startupCommand, !startupCommand.isEmpty {
+            args.append(contentsOf: ["/K", startupCommand])
+        }
+        return args
     }
 
     private static func launchWineProcess(
         name: String?,
         args: [String],
         bottle: Bottle,
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
+        directory: URL? = nil
     ) async throws {
         let stream = try Self.runWineProcess(
             name: name,
             args: args,
             bottle: bottle,
-            environment: environment
+            environment: environment,
+            directory: directory
         )
         Task.detached(priority: .userInitiated) {
             for await _ in stream { }

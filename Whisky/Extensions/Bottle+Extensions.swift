@@ -31,7 +31,26 @@ extension Bottle {
             Task.detached(priority: .userInitiated) {
                 await Wine.ensureConsoleFont(bottle: self)
             }
-            try await Wine.launchConsole(bottle: self)
+            let userInfo = resolveWindowsUserInfo()
+            if !FileManager.default.fileExists(atPath: userInfo.userHomeURL.path) {
+                try? FileManager.default.createDirectory(
+                    at: userInfo.userHomeURL,
+                    withIntermediateDirectories: true
+                )
+            }
+            let startupCommand = "chcp 936>nul"
+            try await Wine.launchConsole(
+                bottle: self,
+                startupCommand: startupCommand,
+                environment: [
+                    "USERPROFILE": userInfo.userProfile,
+                    "HOMEDRIVE": userInfo.homeDrive,
+                    "HOMEPATH": userInfo.homePath,
+                    "LANG": "zh_CN.UTF-8",
+                    "LC_ALL": "zh_CN.UTF-8"
+                ],
+                directory: userInfo.userHomeURL
+            )
         } catch {
             await self.showRunError(message: error.localizedDescription)
         }
@@ -205,5 +224,60 @@ extension Bottle {
         alert.alertStyle = .critical
         alert.addButton(withTitle: String(localized: "button.ok"))
         alert.runModal()
+    }
+}
+
+private extension Bottle {
+    struct WindowsUserInfo {
+        let userName: String
+        let userProfile: String
+        let homeDrive: String
+        let homePath: String
+        let userHomeURL: URL
+    }
+
+    func resolveWindowsUserInfo() -> WindowsUserInfo {
+        let usersDir = url
+            .appending(path: "drive_c")
+            .appending(path: "users")
+        let reserved: Set<String> = [
+            "Public",
+            "Default",
+            "Default User",
+            "All Users"
+        ]
+
+        let userName: String = {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: usersDir,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                return "crossover"
+            }
+
+            let directories = entries.filter { url in
+                (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            }
+            if directories.contains(where: { $0.lastPathComponent == "crossover" }) {
+                return "crossover"
+            }
+            let fallback = directories
+                .map(\.lastPathComponent)
+                .first(where: { !reserved.contains($0) })
+            return fallback ?? "crossover"
+        }()
+
+        let homeDrive = "C:"
+        let homePath = #"\\users\#(userName)"#
+        let userProfile = #"C:\users\#(userName)"#
+        let userHomeURL = usersDir.appending(path: userName)
+        return WindowsUserInfo(
+            userName: userName,
+            userProfile: userProfile,
+            homeDrive: homeDrive,
+            homePath: homePath,
+            userHomeURL: userHomeURL
+        )
     }
 }

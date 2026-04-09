@@ -60,6 +60,7 @@ extension Wine {
         static let windowMetrics = #"HKCU\Control Panel\Desktop\WindowMetrics"#
         static let international = #"HKCU\Control Panel\International"#
         static let nlsCodePage = #"HKLM\SYSTEM\CurrentControlSet\Control\Nls\CodePage"#
+        static let keyboardPreload = #"HKCU\Keyboard Layout\Preload"#
     }
 
     public static func ensureDefaultFontSubstitutes(bottle: Bottle) async {
@@ -239,6 +240,8 @@ extension Wine {
                 data: value, type: .string
             )
         }
+
+        // Keep locale/codepage for CJK display only.
     }
 
     private static func cjkFontCandidates() -> [String] {
@@ -474,20 +477,21 @@ extension Wine {
     }
 
     private static func applyConsoleFontDefaults(bottle: Bottle) async throws {
+        let preferredFaceName = resolveConsoleFaceName(bottle: bottle)
         let faceName = try await Wine.queryRegistryKey(
             bottle: bottle, key: FontRegistryKey.console, name: "FaceName", type: .string
         )
-        if faceName != "Menlo" {
+        if faceName != preferredFaceName {
             try await Wine.addRegistryKey(
                 bottle: bottle, key: FontRegistryKey.console, name: "FaceName",
-                data: "Menlo", type: .string
+                data: preferredFaceName, type: .string
             )
         }
 
         let fontFamily = try await Wine.queryRegistryKey(
             bottle: bottle, key: FontRegistryKey.console, name: "FontFamily", type: .dword
         )
-        if fontFamily == nil {
+        if fontFamily != "54" {
             try await Wine.addRegistryKey(
                 bottle: bottle, key: FontRegistryKey.console, name: "FontFamily",
                 data: "54", type: .dword
@@ -497,7 +501,7 @@ extension Wine {
         let fontWeight = try await Wine.queryRegistryKey(
             bottle: bottle, key: FontRegistryKey.console, name: "FontWeight", type: .dword
         )
-        if fontWeight == nil {
+        if fontWeight != "400" {
             try await Wine.addRegistryKey(
                 bottle: bottle, key: FontRegistryKey.console, name: "FontWeight",
                 data: "400", type: .dword
@@ -507,23 +511,48 @@ extension Wine {
         let fontSize = try await Wine.queryRegistryKey(
             bottle: bottle, key: FontRegistryKey.console, name: "FontSize", type: .dword
         )
-        if fontSize == nil {
+        let cjkFaces: Set<String> = ["SimSun", "Songti SC", "Heiti SC", "PingFang SC"]
+        let fontSizeValue = cjkFaces.contains(preferredFaceName) ? "1048582" : "786438"
+        if fontSize != fontSizeValue {
             // Height 12, Width 6 -> 0x000C0006
+            // Height 16, Width 6 -> 0x00100006
             try await Wine.addRegistryKey(
                 bottle: bottle, key: FontRegistryKey.console, name: "FontSize",
-                data: "786438", type: .dword
+                data: fontSizeValue, type: .dword
             )
         }
 
         let codePage = try await Wine.queryRegistryKey(
             bottle: bottle, key: FontRegistryKey.console, name: "CodePage", type: .dword
         )
-        if codePage == nil {
+        if codePage != "936" {
             try await Wine.addRegistryKey(
                 bottle: bottle, key: FontRegistryKey.console, name: "CodePage",
                 data: "936", type: .dword
             )
         }
+    }
+
+    private static func resolveConsoleFaceName(bottle: Bottle) -> String {
+        let fontsDir = bottle.url
+            .appending(path: "drive_c")
+            .appending(path: "windows")
+            .appending(path: "Fonts")
+
+        if FileManager.default.fileExists(atPath: fontsDir.appending(path: "simsun.ttc").path) {
+            return "SimSun"
+        }
+        if FileManager.default.fileExists(atPath: fontsDir.appending(path: "Songti.ttc").path) {
+            return "Songti SC"
+        }
+        if FileManager.default.fileExists(atPath: fontsDir.appending(path: "STHeiti Medium.ttc").path)
+            || FileManager.default.fileExists(atPath: fontsDir.appending(path: "STHeiti Light.ttc").path) {
+            return "Heiti SC"
+        }
+        if FileManager.default.fileExists(atPath: fontsDir.appending(path: "PingFang.ttc").path) {
+            return "PingFang SC"
+        }
+        return "Menlo"
     }
 
     private static func ensureConsoleFontFiles(bottle: Bottle) async {
