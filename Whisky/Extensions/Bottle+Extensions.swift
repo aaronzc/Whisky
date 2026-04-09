@@ -28,7 +28,9 @@ extension Bottle {
 
     func openTerminal() async {
         do {
-            await Wine.ensureConsoleFont(bottle: self)
+            Task.detached(priority: .userInitiated) {
+                await Wine.ensureConsoleFont(bottle: self)
+            }
             try await Wine.launchConsole(bottle: self)
         } catch {
             await self.showRunError(message: error.localizedDescription)

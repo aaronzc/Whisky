@@ -118,9 +118,6 @@ public class Wine {
     }
 
     public static func runConsole(bottle: Bottle) async throws {
-        if bottle.settings.dxvk {
-            try enableDXVK(bottle: bottle)
-        }
         let env = ["WINEDEBUG": "-all"]
         for await _ in try Self.runWineProcess(
             name: "wineconsole",
@@ -131,9 +128,6 @@ public class Wine {
     }
 
     public static func launchConsole(bottle: Bottle) async throws {
-        if bottle.settings.dxvk {
-            try enableDXVK(bottle: bottle)
-        }
         let env = ["WINEDEBUG": "-all"]
         try await launchWineProcess(
             name: "wineconsole",

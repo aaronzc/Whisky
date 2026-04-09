@@ -73,7 +73,11 @@ struct BottleView: View {
                         guard !terminalLoading else { return }
                         terminalLoading = true
                         Task(priority: .userInitiated) {
-                            if await Wine.isProcessRunning(bottle: bottle, imageName: "wineconsole.exe") {
+                            let alreadyRunning = await Wine.isProcessRunning(
+                                bottle: bottle,
+                                imageName: "wineconsole.exe"
+                            )
+                            if alreadyRunning {
                                 await MainActor.run {
                                     terminalLoading = false
                                 }
