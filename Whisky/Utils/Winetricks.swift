@@ -44,8 +44,19 @@ struct WinetricksCategory {
 class Winetricks {
     static let winetricksURL: URL = WhiskyWineInstaller.libraryFolder
         .appending(path: "winetricks")
+    private static let verbsURL: URL = WhiskyWineInstaller.libraryFolder
+        .appending(path: "verbs.txt")
+    private static let bundledWinetricksURL = Bundle.main.url(forResource: "winetricks",
+                                                              withExtension: nil,
+                                                              subdirectory: "Winetricks")
+        ?? Bundle.main.url(forResource: "winetricks", withExtension: nil)
+    private static let bundledVerbsURL = Bundle.main.url(forResource: "verbs",
+                                                         withExtension: "txt",
+                                                         subdirectory: "Winetricks")
+        ?? Bundle.main.url(forResource: "verbs", withExtension: "txt")
 
     static func runCommand(command: String, bottle: Bottle) async {
+        await ensureResources()
         guard let resourcesURL = Bundle.main.url(forResource: "cabextract", withExtension: nil)?
             .deletingLastPathComponent() else { return }
         // swiftlint:disable:next line_length
@@ -80,17 +91,18 @@ class Winetricks {
         }
     }
 
-    static func parseVerbs() async -> [WinetricksCategory] {
-        // Grab the verbs file
-        let verbsURL = WhiskyWineInstaller.libraryFolder.appending(path: "verbs.txt")
-        let verbs: String = await { () async -> String in
-            do {
-                let (data, _) = try await URLSession.shared.data(from: verbsURL)
-                return String(data: data, encoding: .utf8) ?? String()
-            } catch {
-                return String()
+    static func parseVerbs(bottle: Bottle) async -> [WinetricksCategory] {
+        await ensureResources()
+        var verbs: String = (try? String(contentsOf: verbsURL, encoding: .utf8)) ?? ""
+        if verbs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !verbs.contains("=====") {
+            await copyBundledResources()
+            verbs = (try? String(contentsOf: verbsURL, encoding: .utf8)) ?? ""
+            if verbs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let bundledVerbsURL,
+               let bundledVerbs = try? String(contentsOf: bundledVerbsURL, encoding: .utf8) {
+                verbs = bundledVerbs
             }
-        }()
+        }
 
         // Read the file line by line
         let lines = verbs.components(separatedBy: "\n")
@@ -134,5 +146,33 @@ class Winetricks {
         }
 
         return categories
+    }
+
+    private static func ensureResources() async {
+        do {
+            try FileManager.default.createDirectory(at: WhiskyWineInstaller.libraryFolder,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            return
+        }
+        await copyBundledResources()
+    }
+
+    private static func copyBundledResources() async {
+        if !FileManager.default.fileExists(atPath: winetricksURL.path),
+           let bundledWinetricksURL {
+            try? FileManager.default.copyItem(at: bundledWinetricksURL, to: winetricksURL)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: winetricksURL.path
+            )
+        }
+
+        let verbsContent = (try? String(contentsOf: verbsURL, encoding: .utf8)) ?? ""
+        if verbsContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !verbsContent.contains("====="),
+           let bundledVerbsURL {
+            try? FileManager.default.removeItem(at: verbsURL)
+            try? FileManager.default.copyItem(at: bundledVerbsURL, to: verbsURL)
+        }
     }
 }

@@ -56,6 +56,8 @@ final class BottleVM: ObservableObject, @unchecked Sendable {
                 bottle.settings.windowsVersion = winVersion
                 bottle.settings.name = bottleName
                 try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
+                await Wine.ensureDefaultFontSubstitutes(bottle: bottle)
+                await Wine.ensureConsoleFont(bottle: bottle)
                 let wineVer = try await Wine.wineVersion()
                 bottle.settings.wineVersion = SemanticVersion(wineVer) ?? SemanticVersion(0, 0, 0)
                 await MainActor.run {

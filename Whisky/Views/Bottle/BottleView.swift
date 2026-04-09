@@ -116,6 +116,10 @@ struct BottleView: View {
             }
             .onAppear {
                 updateStartMenu()
+                Task.detached(priority: .userInitiated) {
+                    await Wine.ensureDefaultFontSubstitutes(bottle: bottle)
+                    await Wine.ensureConsoleFont(bottle: bottle)
+                }
             }
             .disabled(!bottle.isAvailable)
             .navigationTitle(bottle.settings.name)
@@ -149,6 +153,13 @@ struct BottleView: View {
         bottle.updateInstalledPrograms()
 
         let startMenuPrograms = bottle.getStartMenuPrograms()
+        var programURLs = Set(bottle.programs.map { $0.url })
+        for startMenuProgram in startMenuPrograms where !programURLs.contains(startMenuProgram.url) {
+            bottle.programs.append(startMenuProgram)
+            programURLs.insert(startMenuProgram.url)
+        }
+        bottle.programs = bottle.programs.sorted { $0.name.lowercased() < $1.name.lowercased() }
+
         var updatedSettings = bottle.settings
         for startMenuProgram in startMenuPrograms {
             for program in bottle.programs where

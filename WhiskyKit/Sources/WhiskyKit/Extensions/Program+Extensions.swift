@@ -35,9 +35,29 @@ extension Program {
 
         Task.detached(priority: .userInitiated) {
             do {
-                try await Wine.runProgram(
-                    at: self.url, args: arguments, bottle: self.bottle, environment: environment
-                )
+                if self.url.lastPathComponent.lowercased() == "cmd.exe" {
+                    await Wine.ensureConsoleFont(bottle: self.bottle)
+                    try await Wine.runProgram(
+                        at: self.url, args: arguments, bottle: self.bottle, environment: environment
+                    )
+                } else if self.url.lastPathComponent.lowercased() == "powershell.exe" {
+                    await Wine.ensureConsoleFont(bottle: self.bottle)
+                    let cmdURL = self.bottle.url
+                        .appending(path: "drive_c")
+                        .appending(path: "Windows")
+                        .appending(path: "System32")
+                        .appending(path: "cmd.exe")
+                    try await Wine.runProgram(
+                        at: cmdURL,
+                        args: ["/k", "powershell", "-NoExit", "-NoLogo"] + arguments,
+                        bottle: self.bottle,
+                        environment: environment
+                    )
+                } else {
+                    try await Wine.runProgram(
+                        at: self.url, args: arguments, bottle: self.bottle, environment: environment
+                    )
+                }
             } catch {
                 await MainActor.run {
                     self.showRunError(message: error.localizedDescription)

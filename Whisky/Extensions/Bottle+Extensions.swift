@@ -27,28 +27,12 @@ extension Bottle {
     }
 
     func openTerminal() {
-        let whiskyCmdURL = Bundle.main.url(forResource: "WhiskyCmd", withExtension: nil)
-        if let whiskyCmdURL = whiskyCmdURL {
-            let whiskyCmd = whiskyCmdURL.path(percentEncoded: false)
-            let cmd = "eval \\\"$(\\\"\(whiskyCmd)\\\" shellenv \\\"\(settings.name)\\\")\\\""
-
-            let script = """
-            tell application "Terminal"
-            activate
-            do script "\(cmd)"
-            end tell
-            """
-
-            Task.detached(priority: .userInitiated) {
-                var error: NSDictionary?
-                guard let appleScript = NSAppleScript(source: script) else { return }
-                appleScript.executeAndReturnError(&error)
-
-                if let error = error {
-                    Logger.wineKit.error("Failed to run terminal script \(error)")
-                    guard let description = error["NSAppleScriptErrorMessage"] as? String else { return }
-                    await self.showRunError(message: String(describing: description))
-                }
+        Task.detached(priority: .userInitiated) {
+            do {
+                await Wine.ensureConsoleFont(bottle: self)
+                try await Wine.runConsole(bottle: self)
+            } catch {
+                await self.showRunError(message: error.localizedDescription)
             }
         }
     }
@@ -180,21 +164,30 @@ extension Bottle {
 
     @MainActor
     func remove(delete: Bool) {
-        do {
-            if let bottle = BottleVM.shared.bottles.first(where: { $0.url == url }) {
-                bottle.inFlight = true
-            }
+        if let bottle = BottleVM.shared.bottles.first(where: { $0.url == url }) {
+            bottle.inFlight = true
+        }
 
-            if delete {
-                try FileManager.default.removeItem(at: url)
-            }
+        Task.detached(priority: .userInitiated) {
+            do {
+                if delete {
+                    try FileManager.default.removeItem(at: self.url)
+                }
 
-            if let path = BottleVM.shared.bottlesList.paths.firstIndex(of: url) {
-                BottleVM.shared.bottlesList.paths.remove(at: path)
+                await MainActor.run {
+                    if let path = BottleVM.shared.bottlesList.paths.firstIndex(of: self.url) {
+                        BottleVM.shared.bottlesList.paths.remove(at: path)
+                    }
+                    BottleVM.shared.loadBottles()
+                }
+            } catch {
+                await MainActor.run {
+                    if let bottle = BottleVM.shared.bottles.first(where: { $0.url == self.url }) {
+                        bottle.inFlight = false
+                    }
+                }
+                print("Failed to remove bottle: \(error)")
             }
-            BottleVM.shared.loadBottles()
-        } catch {
-            print("Failed to remove bottle")
         }
     }
 

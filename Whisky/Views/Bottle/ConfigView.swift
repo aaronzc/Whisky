@@ -156,6 +156,10 @@ struct ConfigView: View {
         .animation(.whiskyDefault, value: wineSectionExpanded)
         .animation(.whiskyDefault, value: dxvkSectionExpanded)
         .animation(.whiskyDefault, value: metalSectionExpanded)
+        .task {
+            await Wine.ensureDefaultFontSubstitutes(bottle: bottle)
+            await Wine.ensureConsoleFont(bottle: bottle)
+        }
         .bottomBar {
             HStack {
                 Spacer()

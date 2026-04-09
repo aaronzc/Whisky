@@ -19,6 +19,8 @@
 import Foundation
 import os.log
 
+// swiftlint:disable file_length
+
 public class Wine {
     /// URL to the installed `DXVK` folder
     private static let dxvkFolder: URL = WhiskyWineInstaller.libraryFolder.appending(path: "DXVK")
@@ -108,6 +110,19 @@ public class Wine {
             name: url.lastPathComponent,
             args: ["start", "/unix", url.path(percentEncoded: false)] + args,
             bottle: bottle, environment: environment
+        ) { }
+    }
+
+    public static func runConsole(bottle: Bottle) async throws {
+        if bottle.settings.dxvk {
+            try enableDXVK(bottle: bottle)
+        }
+        let env = ["WINEDEBUG": "-all"]
+        for await _ in try Self.runWineProcess(
+            name: "wineconsole",
+            args: ["wineconsole", "cmd"],
+            bottle: bottle,
+            environment: env
         ) { }
     }
 
@@ -264,6 +279,7 @@ enum RegistryType: String {
     case dword = "REG_DWORD"
     case qword = "REG_QWORD"
     case string = "REG_SZ"
+    case multiString = "REG_MULTI_SZ"
 }
 
 extension Wine {
@@ -290,7 +306,7 @@ extension Wine {
         case desktop = #"HKCU\Control Panel\Desktop"#
     }
 
-    private static func addRegistryKey(
+    static func addRegistryKey(
         bottle: Bottle, key: String, name: String, data: String, type: RegistryType
     ) async throws {
         try await runWine(
@@ -299,7 +315,7 @@ extension Wine {
         )
     }
 
-    private static func queryRegistryKey(
+    static func queryRegistryKey(
         bottle: Bottle, key: String, name: String, type: RegistryType
     ) async throws -> String? {
         let output = try await runWine(["reg", "query", key, "-v", name], bottle: bottle)
@@ -368,7 +384,6 @@ extension Wine {
         guard let int = int else { return nil }
         return int
     }
-
     public static func changeDpiResolution(bottle: Bottle, dpi: Int) async throws {
         try await Wine.addRegistryKey(
             bottle: bottle, key: RegistryKey.desktop.rawValue, name: "LogPixels", data: String(dpi),
@@ -378,11 +393,13 @@ extension Wine {
 
     @discardableResult
     public static func control(bottle: Bottle) async throws -> String {
+        await ensureDefaultFontSubstitutes(bottle: bottle)
         return try await Wine.runWine(["control"], bottle: bottle)
     }
 
     @discardableResult
     public static func regedit(bottle: Bottle) async throws -> String {
+        await ensureDefaultFontSubstitutes(bottle: bottle)
         return try await Wine.runWine(["regedit"], bottle: bottle)
     }
 
