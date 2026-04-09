@@ -20,48 +20,94 @@ import Foundation
 import AppKit
 import os.log
 
+private actor ProgramLaunchGuard {
+    static let shared = ProgramLaunchGuard()
+    private var launching: Set<URL> = []
+
+    func acquire(_ url: URL) -> Bool {
+        if launching.contains(url) {
+            return false
+        }
+        launching.insert(url)
+        return true
+    }
+
+    func release(_ url: URL) {
+        launching.remove(url)
+    }
+}
+
+private extension Program {
+    var launchImageName: String {
+        let lowercasedName = url.lastPathComponent.lowercased()
+        if lowercasedName == "cmd.exe" {
+            return "cmd.exe"
+        }
+        if lowercasedName == "powershell.exe" {
+            return "powershell.exe"
+        }
+        return url.lastPathComponent
+    }
+}
+
 extension Program {
     public func run() {
         if NSEvent.modifierFlags.contains(.shift) {
             self.runInTerminal()
         } else {
-            self.runInWine()
+            Task.detached(priority: .userInitiated) {
+                let acquired = await ProgramLaunchGuard.shared.acquire(self.url)
+                if !acquired {
+                    Wine.activateWineApp()
+                    return
+                }
+                defer {
+                    Task { await ProgramLaunchGuard.shared.release(self.url) }
+                }
+
+                let imageName = self.launchImageName
+                if await Wine.isProcessRunning(bottle: self.bottle, imageName: imageName) {
+                    Wine.activateWineApp()
+                    return
+                }
+
+                await self.runInWine(imageName: imageName)
+            }
         }
     }
 
-    func runInWine() {
+    func runInWine(imageName: String) async {
         let arguments = settings.arguments.split { $0.isWhitespace }.map(String.init)
         let environment = generateEnvironment()
 
-        Task.detached(priority: .userInitiated) {
-            do {
-                if self.url.lastPathComponent.lowercased() == "cmd.exe" {
-                    await Wine.ensureConsoleFont(bottle: self.bottle)
-                    try await Wine.runProgram(
-                        at: self.url, args: arguments, bottle: self.bottle, environment: environment
-                    )
-                } else if self.url.lastPathComponent.lowercased() == "powershell.exe" {
-                    await Wine.ensureConsoleFont(bottle: self.bottle)
-                    let cmdURL = self.bottle.url
-                        .appending(path: "drive_c")
-                        .appending(path: "Windows")
-                        .appending(path: "System32")
-                        .appending(path: "cmd.exe")
-                    try await Wine.runProgram(
-                        at: cmdURL,
-                        args: ["/k", "powershell", "-NoExit", "-NoLogo"] + arguments,
-                        bottle: self.bottle,
-                        environment: environment
-                    )
-                } else {
-                    try await Wine.runProgram(
-                        at: self.url, args: arguments, bottle: self.bottle, environment: environment
-                    )
-                }
-            } catch {
-                await MainActor.run {
-                    self.showRunError(message: error.localizedDescription)
-                }
+        do {
+            if self.url.lastPathComponent.lowercased() == "cmd.exe" {
+                await Wine.ensureConsoleFont(bottle: self.bottle)
+                try await Wine.runProgram(
+                    at: self.url, args: arguments, bottle: self.bottle, environment: environment
+                )
+            } else if self.url.lastPathComponent.lowercased() == "powershell.exe" {
+                await Wine.ensureConsoleFont(bottle: self.bottle)
+                let cmdURL = self.bottle.url
+                    .appending(path: "drive_c")
+                    .appending(path: "Windows")
+                    .appending(path: "System32")
+                    .appending(path: "cmd.exe")
+                try await Wine.runProgram(
+                    at: cmdURL,
+                    args: ["/k", "powershell", "-NoExit", "-NoLogo"] + arguments,
+                    bottle: self.bottle,
+                    environment: environment
+                )
+            } else {
+                try await Wine.runProgram(
+                    at: self.url, args: arguments, bottle: self.bottle, environment: environment
+                )
+            }
+            _ = await Wine.waitForProcessStart(bottle: self.bottle, imageName: imageName)
+        } catch {
+            await MainActor.run {
+                self.showRunError(message: error.localizedDescription)
             }
         }
     }
@@ -106,3 +152,5 @@ extension Program {
         alert.runModal()
     }
 }
+
+// Intentionally left empty; Wine windows are activated via Wine.activateWineApp().

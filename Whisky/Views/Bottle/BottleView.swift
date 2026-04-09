@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import WhiskyKit
 
@@ -31,6 +32,8 @@ struct BottleView: View {
     @State private var path = NavigationPath()
     @State private var programLoading: Bool = false
     @State private var showWinetricksSheet: Bool = false
+    @State private var terminalLoading: Bool = false
+    @State private var runPanelPresented: Bool = false
 
     private let gridLayout = [GridItem(.adaptive(minimum: 100, maximum: .infinity))]
 
@@ -66,13 +69,49 @@ struct BottleView: View {
                     Button("button.cDrive") {
                         bottle.openCDrive()
                     }
-                    Button("button.terminal") {
-                        bottle.openTerminal()
+                    Button {
+                        guard !terminalLoading else { return }
+                        terminalLoading = true
+                        Task(priority: .userInitiated) {
+                            if await Wine.isProcessRunning(bottle: bottle, imageName: "wineconsole.exe") {
+                                await MainActor.run {
+                                    terminalLoading = false
+                                }
+                                Wine.activateWineApp()
+                                return
+                            }
+                            await bottle.openTerminal()
+                            let started = await Wine.waitForProcessStart(
+                                bottle: bottle,
+                                imageName: "wineconsole.exe",
+                                timeoutSeconds: 1.5,
+                                pollIntervalSeconds: 0.35
+                            )
+                            await MainActor.run {
+                                terminalLoading = false
+                            }
+                            if started {
+                                Wine.activateWineApp()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("button.terminal")
+                            if terminalLoading {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
                     }
+                    .disabled(terminalLoading)
                     Button("button.winetricks") {
                         showWinetricksSheet.toggle()
                     }
-                    Button("button.run") {
+                    Button {
+                        if runPanelPresented {
+                            return
+                        }
+                        runPanelPresented = true
                         let panel = NSOpenPanel()
                         panel.allowsMultipleSelection = false
                         panel.canChooseDirectories = false
@@ -84,9 +123,21 @@ struct BottleView: View {
                         panel.begin { result in
                             programLoading = true
                             Task(priority: .userInitiated) {
+                                await MainActor.run {
+                                    runPanelPresented = false
+                                }
                                 if result == .OK {
                                     if let url = panel.urls.first {
+                                        let imageName = url.lastPathComponent
                                         do {
+                                            if url.pathExtension == "exe",
+                                               await Wine.isProcessRunning(bottle: bottle, imageName: imageName) {
+                                                await MainActor.run {
+                                                    programLoading = false
+                                                }
+                                                Wine.activateWineApp()
+                                                return
+                                            }
                                             if url.pathExtension == "bat" {
                                                 try await Wine.runBatchFile(url: url, bottle: bottle)
                                             } else {
@@ -95,22 +146,41 @@ struct BottleView: View {
                                         } catch {
                                             print("Failed to run external program: \(error)")
                                         }
-                                        programLoading = false
+                                        if url.pathExtension == "exe" {
+                                            if await Wine.isProcessRunning(bottle: bottle,
+                                                                           imageName: imageName) {
+                                                Wine.activateWineApp()
+                                            } else {
+                                                _ = await Wine.waitForProcessStart(
+                                                    bottle: bottle,
+                                                    imageName: imageName
+                                                )
+                                            }
+                                        }
+                                        await MainActor.run {
+                                            programLoading = false
+                                        }
                                     }
                                 } else {
-                                    programLoading = false
+                                    await MainActor.run {
+                                        programLoading = false
+                                    }
                                 }
-                                updateStartMenu()
+                                await MainActor.run {
+                                    updateStartMenu()
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("button.run")
+                            if programLoading {
+                                ProgressView()
+                                    .controlSize(.small)
                             }
                         }
                     }
                     .disabled(programLoading)
-                    if programLoading {
-                        Spacer()
-                            .frame(width: 10)
-                        ProgressView()
-                            .controlSize(.small)
-                    }
                 }
                 .padding()
             }
@@ -176,3 +246,5 @@ struct BottleView: View {
         bottle.settings = updatedSettings
     }
 }
+
+// Intentionally left empty; Wine windows are activated via Wine.activateWineApp().

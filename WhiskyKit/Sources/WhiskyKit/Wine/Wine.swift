@@ -17,9 +17,13 @@
 //
 
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 import os.log
 
 // swiftlint:disable file_length
+// swiftlint:disable type_body_length
 
 public class Wine {
     /// URL to the installed `DXVK` folder
@@ -125,6 +129,115 @@ public class Wine {
             environment: env
         ) { }
     }
+
+    public static func launchConsole(bottle: Bottle) async throws {
+        if bottle.settings.dxvk {
+            try enableDXVK(bottle: bottle)
+        }
+        let env = ["WINEDEBUG": "-all"]
+        try await launchWineProcess(
+            name: "wineconsole",
+            args: ["wineconsole", "cmd"],
+            bottle: bottle,
+            environment: env
+        )
+    }
+
+    private static func launchWineProcess(
+        name: String?,
+        args: [String],
+        bottle: Bottle,
+        environment: [String: String] = [:]
+    ) async throws {
+        let stream = try Self.runWineProcess(
+            name: name,
+            args: args,
+            bottle: bottle,
+            environment: environment
+        )
+        Task.detached(priority: .userInitiated) {
+            for await _ in stream { }
+        }
+    }
+
+    public static func isProcessRunning(bottle: Bottle, imageName: String) async -> Bool {
+        let filter = "IMAGENAME eq \(imageName)"
+        let output = try? await runWine(["tasklist.exe", "/FO", "CSV", "/NH", "/FI", filter], bottle: bottle)
+        guard var output, !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        output = output.replacingOccurrences(of: "\r", with: "")
+        if output.lowercased().contains("no tasks") || output.lowercased().contains("no tasks are running") {
+            return false
+        }
+        for line in output.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("\"\(imageName)\"") {
+                return true
+            }
+        }
+        return output.lowercased().contains("\"\(imageName.lowercased())\"")
+    }
+
+    public static func waitForProcessStart(
+        bottle: Bottle,
+        imageName: String,
+        timeoutSeconds: Double = 8,
+        pollIntervalSeconds: Double = 0.25
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if await isProcessRunning(bottle: bottle, imageName: imageName) {
+                return true
+            }
+            let nanos = UInt64(pollIntervalSeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: max(nanos, 50_000_000))
+        }
+        return false
+    }
+
+#if canImport(AppKit)
+    public static func activateWineApp() {
+        guard let appURL = wineAppBundleURL() else { return }
+        let runningApps = NSWorkspace.shared.runningApplications
+        if let app = runningApps.first(where: { $0.bundleURL == appURL }) {
+            app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            return
+        }
+        if let bundleId = Bundle(url: appURL)?.bundleIdentifier,
+           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+            app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+            return
+        }
+
+        if let bundle = Bundle(url: appURL),
+           let appName = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String {
+            let script = "tell application \"\(appName)\" to activate"
+            var error: NSDictionary?
+            NSAppleScript(source: script)?.executeAndReturnError(&error)
+            if error == nil { return }
+        }
+
+        if #available(macOS 13.0, *) {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+        } else {
+            NSWorkspace.shared.openApplication(at: appURL, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    private static func wineAppBundleURL() -> URL? {
+        var url = wineBinary
+        while url.path != "/" {
+            if url.pathExtension == "app" {
+                return url
+            }
+            url.deleteLastPathComponent()
+        }
+        return nil
+    }
+#endif
 
     public static func generateRunCommand(
         at url: URL, bottle: Bottle, args: String, environment: [String: String]
@@ -269,6 +382,7 @@ public class Wine {
         return result
     }
 }
+// swiftlint:enable type_body_length
 
 enum WineInterfaceError: Error {
     case invalidResponce
@@ -401,6 +515,21 @@ extension Wine {
     public static func regedit(bottle: Bottle) async throws -> String {
         await ensureDefaultFontSubstitutes(bottle: bottle)
         return try await Wine.runWine(["regedit"], bottle: bottle)
+    }
+
+    public static func launchControl(bottle: Bottle) async throws {
+        await ensureDefaultFontSubstitutes(bottle: bottle)
+        try await launchWineProcess(name: "control", args: ["control"], bottle: bottle)
+    }
+
+    public static func launchRegedit(bottle: Bottle) async throws {
+        await ensureDefaultFontSubstitutes(bottle: bottle)
+        try await launchWineProcess(name: "regedit", args: ["regedit"], bottle: bottle)
+    }
+
+    public static func launchWinecfg(bottle: Bottle) async throws {
+        await ensureDefaultFontSubstitutes(bottle: bottle)
+        try await launchWineProcess(name: "winecfg", args: ["winecfg"], bottle: bottle)
     }
 
     @discardableResult

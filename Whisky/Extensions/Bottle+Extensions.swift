@@ -26,14 +26,12 @@ extension Bottle {
         NSWorkspace.shared.open(url.appending(path: "drive_c"))
     }
 
-    func openTerminal() {
-        Task.detached(priority: .userInitiated) {
-            do {
-                await Wine.ensureConsoleFont(bottle: self)
-                try await Wine.runConsole(bottle: self)
-            } catch {
-                await self.showRunError(message: error.localizedDescription)
-            }
+    func openTerminal() async {
+        do {
+            await Wine.ensureConsoleFont(bottle: self)
+            try await Wine.launchConsole(bottle: self)
+        } catch {
+            await self.showRunError(message: error.localizedDescription)
         }
     }
 

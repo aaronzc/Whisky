@@ -21,6 +21,32 @@ import Foundation
 // swiftlint:disable file_length
 
 extension Wine {
+    private actor FontInitCache {
+        static let shared = FontInitCache()
+        private var appliedBottlePaths: Set<String> = []
+
+        func isApplied(bottle: Bottle) -> Bool {
+            appliedBottlePaths.contains(bottle.url.path)
+        }
+
+        func markApplied(bottle: Bottle) {
+            appliedBottlePaths.insert(bottle.url.path)
+        }
+    }
+
+    private actor ConsoleFontInitCache {
+        static let shared = ConsoleFontInitCache()
+        private var appliedBottlePaths: Set<String> = []
+
+        func isApplied(bottle: Bottle) -> Bool {
+            appliedBottlePaths.contains(bottle.url.path)
+        }
+
+        func markApplied(bottle: Bottle) {
+            appliedBottlePaths.insert(bottle.url.path)
+        }
+    }
+
     private enum FontRegistryKey {
         static let fontSubstitutes = #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"#
         static let fonts = #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Fonts"#
@@ -37,6 +63,9 @@ extension Wine {
     }
 
     public static func ensureDefaultFontSubstitutes(bottle: Bottle) async {
+        if await FontInitCache.shared.isApplied(bottle: bottle) {
+            return
+        }
         do {
             let applied = try await Wine.queryRegistryKey(
                 bottle: bottle, key: FontRegistryKey.whiskyFontsApplied,
@@ -47,6 +76,7 @@ extension Wine {
                 name: "CommonApplied", type: .string
             )
             if applied == "1", commonApplied == "1" {
+                await FontInitCache.shared.markApplied(bottle: bottle)
                 return
             }
 
@@ -77,6 +107,7 @@ extension Wine {
                     data: "1", type: .string
                 )
             }
+            await FontInitCache.shared.markApplied(bottle: bottle)
         } catch {
             return
         }
@@ -430,60 +461,68 @@ extension Wine {
     }
 
     public static func ensureConsoleFont(bottle: Bottle) async {
+        if await ConsoleFontInitCache.shared.isApplied(bottle: bottle) {
+            return
+        }
         do {
             await ensureConsoleFontFiles(bottle: bottle)
-            let faceName = try await Wine.queryRegistryKey(
-                bottle: bottle, key: FontRegistryKey.console, name: "FaceName", type: .string
-            )
-            if faceName != "Menlo" {
-                try await Wine.addRegistryKey(
-                    bottle: bottle, key: FontRegistryKey.console, name: "FaceName",
-                    data: "Menlo", type: .string
-                )
-            }
-
-            let fontFamily = try await Wine.queryRegistryKey(
-                bottle: bottle, key: FontRegistryKey.console, name: "FontFamily", type: .dword
-            )
-            if fontFamily == nil {
-                try await Wine.addRegistryKey(
-                    bottle: bottle, key: FontRegistryKey.console, name: "FontFamily",
-                    data: "54", type: .dword
-                )
-            }
-
-            let fontWeight = try await Wine.queryRegistryKey(
-                bottle: bottle, key: FontRegistryKey.console, name: "FontWeight", type: .dword
-            )
-            if fontWeight == nil {
-                try await Wine.addRegistryKey(
-                    bottle: bottle, key: FontRegistryKey.console, name: "FontWeight",
-                    data: "400", type: .dword
-                )
-            }
-
-            let fontSize = try await Wine.queryRegistryKey(
-                bottle: bottle, key: FontRegistryKey.console, name: "FontSize", type: .dword
-            )
-            if fontSize == nil {
-                // Height 12, Width 6 -> 0x000C0006
-                try await Wine.addRegistryKey(
-                    bottle: bottle, key: FontRegistryKey.console, name: "FontSize",
-                    data: "786438", type: .dword
-                )
-            }
-
-            let codePage = try await Wine.queryRegistryKey(
-                bottle: bottle, key: FontRegistryKey.console, name: "CodePage", type: .dword
-            )
-            if codePage == nil {
-                try await Wine.addRegistryKey(
-                    bottle: bottle, key: FontRegistryKey.console, name: "CodePage",
-                    data: "936", type: .dword
-                )
-            }
+            try await applyConsoleFontDefaults(bottle: bottle)
+            await ConsoleFontInitCache.shared.markApplied(bottle: bottle)
         } catch {
             return
+        }
+    }
+
+    private static func applyConsoleFontDefaults(bottle: Bottle) async throws {
+        let faceName = try await Wine.queryRegistryKey(
+            bottle: bottle, key: FontRegistryKey.console, name: "FaceName", type: .string
+        )
+        if faceName != "Menlo" {
+            try await Wine.addRegistryKey(
+                bottle: bottle, key: FontRegistryKey.console, name: "FaceName",
+                data: "Menlo", type: .string
+            )
+        }
+
+        let fontFamily = try await Wine.queryRegistryKey(
+            bottle: bottle, key: FontRegistryKey.console, name: "FontFamily", type: .dword
+        )
+        if fontFamily == nil {
+            try await Wine.addRegistryKey(
+                bottle: bottle, key: FontRegistryKey.console, name: "FontFamily",
+                data: "54", type: .dword
+            )
+        }
+
+        let fontWeight = try await Wine.queryRegistryKey(
+            bottle: bottle, key: FontRegistryKey.console, name: "FontWeight", type: .dword
+        )
+        if fontWeight == nil {
+            try await Wine.addRegistryKey(
+                bottle: bottle, key: FontRegistryKey.console, name: "FontWeight",
+                data: "400", type: .dword
+            )
+        }
+
+        let fontSize = try await Wine.queryRegistryKey(
+            bottle: bottle, key: FontRegistryKey.console, name: "FontSize", type: .dword
+        )
+        if fontSize == nil {
+            // Height 12, Width 6 -> 0x000C0006
+            try await Wine.addRegistryKey(
+                bottle: bottle, key: FontRegistryKey.console, name: "FontSize",
+                data: "786438", type: .dword
+            )
+        }
+
+        let codePage = try await Wine.queryRegistryKey(
+            bottle: bottle, key: FontRegistryKey.console, name: "CodePage", type: .dword
+        )
+        if codePage == nil {
+            try await Wine.addRegistryKey(
+                bottle: bottle, key: FontRegistryKey.console, name: "CodePage",
+                data: "936", type: .dword
+            )
         }
     }
 

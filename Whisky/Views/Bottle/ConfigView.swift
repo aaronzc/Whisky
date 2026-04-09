@@ -17,7 +17,10 @@
 //
 
 import SwiftUI
+import AppKit
 import WhiskyKit
+
+// swiftlint:disable file_length
 
 enum LoadingState {
     case loading
@@ -26,6 +29,7 @@ enum LoadingState {
     case failed
 }
 
+// swiftlint:disable type_body_length
 struct ConfigView: View {
     @ObservedObject var bottle: Bottle
     @State private var buildVersion: Int = 0
@@ -36,6 +40,9 @@ struct ConfigView: View {
     @State private var retinaModeLoadingState: LoadingState = .loading
     @State private var dpiConfigLoadingState: LoadingState = .loading
     @State private var dpiSheetPresented: Bool = false
+    @State private var controlLoading: Bool = false
+    @State private var regeditLoading: Bool = false
+    @State private var winecfgLoading: Bool = false
     @AppStorage("wineSectionExpanded") private var wineSectionExpanded: Bool = true
     @AppStorage("dxvkSectionExpanded") private var dxvkSectionExpanded: Bool = true
     @AppStorage("metalSectionExpanded") private var metalSectionExpanded: Bool = true
@@ -163,33 +170,123 @@ struct ConfigView: View {
         .bottomBar {
             HStack {
                 Spacer()
-                Button("config.controlPanel") {
+                Button {
+                    guard !controlLoading else { return }
+                    controlLoading = true
                     Task(priority: .userInitiated) {
+                        if await Wine.isProcessRunning(bottle: bottle, imageName: "control.exe") {
+                            await MainActor.run {
+                                controlLoading = false
+                                Wine.activateWineApp()
+                            }
+                            return
+                        }
                         do {
-                            try await Wine.control(bottle: bottle)
+                            try await Wine.launchControl(bottle: bottle)
                         } catch {
                             print("Failed to launch control")
                         }
+                        let started = await Wine.waitForProcessStart(
+                            bottle: bottle,
+                            imageName: "control.exe",
+                            timeoutSeconds: 1.5,
+                            pollIntervalSeconds: 0.35
+                        )
+                        await MainActor.run {
+                            controlLoading = false
+                            if started {
+                                Wine.activateWineApp()
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("config.controlPanel")
+                        if controlLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
                     }
                 }
-                Button("config.regedit") {
+                .disabled(controlLoading)
+                Button {
+                    guard !regeditLoading else { return }
+                    regeditLoading = true
                     Task(priority: .userInitiated) {
+                        if await Wine.isProcessRunning(bottle: bottle, imageName: "regedit.exe") {
+                            await MainActor.run {
+                                regeditLoading = false
+                                Wine.activateWineApp()
+                            }
+                            return
+                        }
                         do {
-                            try await Wine.regedit(bottle: bottle)
+                            try await Wine.launchRegedit(bottle: bottle)
                         } catch {
                             print("Failed to launch regedit")
                         }
+                        let started = await Wine.waitForProcessStart(
+                            bottle: bottle,
+                            imageName: "regedit.exe",
+                            timeoutSeconds: 1.5,
+                            pollIntervalSeconds: 0.35
+                        )
+                        await MainActor.run {
+                            regeditLoading = false
+                            if started {
+                                Wine.activateWineApp()
+                            }
+                        }
                     }
-                }
-                Button("config.winecfg") {
-                    Task(priority: .userInitiated) {
-                        do {
-                            try await Wine.cfg(bottle: bottle)
-                        } catch {
-                            print("Failed to launch winecfg")
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("config.regedit")
+                        if regeditLoading {
+                            ProgressView()
+                                .controlSize(.small)
                         }
                     }
                 }
+                .disabled(regeditLoading)
+                Button {
+                    Task(priority: .userInitiated) {
+                        guard !winecfgLoading else { return }
+                        await MainActor.run { winecfgLoading = true }
+                        if await Wine.isProcessRunning(bottle: bottle, imageName: "winecfg.exe") {
+                            await MainActor.run {
+                                winecfgLoading = false
+                                Wine.activateWineApp()
+                            }
+                            return
+                        }
+                        do {
+                            try await Wine.launchWinecfg(bottle: bottle)
+                        } catch {
+                            print("Failed to launch winecfg")
+                        }
+                        let started = await Wine.waitForProcessStart(
+                            bottle: bottle,
+                            imageName: "winecfg.exe",
+                            timeoutSeconds: 1.5,
+                            pollIntervalSeconds: 0.35
+                        )
+                        await MainActor.run {
+                            winecfgLoading = false
+                            if started {
+                                Wine.activateWineApp()
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("config.winecfg")
+                        if winecfgLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                .disabled(winecfgLoading)
             }
             .padding()
         }
@@ -269,6 +366,9 @@ struct ConfigView: View {
         }
     }
 }
+
+// Intentionally left empty; Wine windows are activated via Wine.activateWineApp().
+// swiftlint:enable type_body_length
 
 struct DPIConfigSheetView: View {
     @Binding var dpiConfig: Int
