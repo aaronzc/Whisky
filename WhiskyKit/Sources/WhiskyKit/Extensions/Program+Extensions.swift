@@ -87,18 +87,7 @@ extension Program {
                     at: self.url, args: arguments, bottle: self.bottle, environment: environment
                 )
             } else if self.url.lastPathComponent.lowercased() == "powershell.exe" {
-                await Wine.ensureConsoleFont(bottle: self.bottle)
-                let cmdURL = self.bottle.url
-                    .appending(path: "drive_c")
-                    .appending(path: "Windows")
-                    .appending(path: "System32")
-                    .appending(path: "cmd.exe")
-                try await Wine.runProgram(
-                    at: cmdURL,
-                    args: ["/k", "powershell", "-NoExit", "-NoLogo"] + arguments,
-                    bottle: self.bottle,
-                    environment: environment
-                )
+                try await launchPowerShell(arguments: arguments, environment: environment)
             } else {
                 try await Wine.runProgram(
                     at: self.url, args: arguments, bottle: self.bottle, environment: environment
@@ -138,6 +127,42 @@ extension Program {
                 guard let description = error["NSAppleScriptErrorMessage"] as? String else { return }
                 await self.showRunError(message: String(describing: description))
             }
+        }
+    }
+
+    private func launchPowerShell(arguments: [String], environment: [String: String]) async throws {
+        await Wine.ensureConsoleFont(bottle: self.bottle)
+        let powershellDir = self.bottle.url
+            .appending(path: "drive_c")
+            .appending(path: "Windows")
+            .appending(path: "System32")
+            .appending(path: "WindowsPowerShell")
+            .appending(path: "v1.0")
+        let automationDll = powershellDir.appending(path: "System.Management.Automation.dll")
+        let hasRuntime = FileManager.default.fileExists(atPath: automationDll.path)
+
+        if hasRuntime {
+            let powershellPath = #"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"#
+            var command = "\"\(powershellPath)\" -NoExit -NoLogo"
+            if !arguments.isEmpty {
+                command += " " + arguments.joined(separator: " ")
+            }
+            try await Wine.runConsole(
+                bottle: self.bottle,
+                startupCommand: command,
+                environment: environment
+            )
+        } else {
+            let message = [
+                "echo PowerShell is not installed in this bottle.",
+                "echo Run Winetricks: powershell or powershell_core",
+                "echo."
+            ].joined(separator: " & ")
+            try await Wine.runConsole(
+                bottle: self.bottle,
+                startupCommand: message,
+                environment: environment
+            )
         }
     }
 
