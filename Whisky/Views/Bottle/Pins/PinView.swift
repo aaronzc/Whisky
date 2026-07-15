@@ -92,10 +92,7 @@ struct PinView: View {
             self.image = await task.value
         }
         .onChange(of: name) {
-            if let index = bottle.settings.pins.firstIndex(where: {
-                let exists = FileManager.default.fileExists(atPath: pin.url?.path(percentEncoded: false) ?? "")
-                return $0.url == pin.url && exists
-            }) {
+            if let index = bottle.settings.pins.firstIndex(where: { $0.id == pin.id }) {
                 bottle.settings.pins[index].name = name
             }
         }

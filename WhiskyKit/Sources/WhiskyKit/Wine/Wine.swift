@@ -271,6 +271,36 @@ public class Wine {
         }
     }
 
+    public static func centerWineFrontWindow() {
+        guard let appURL = wineAppBundleURL(),
+              let bundle = Bundle(url: appURL),
+              let appName = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String,
+              let visibleFrame = NSScreen.main?.visibleFrame else { return }
+
+        let width = min(max(Int(visibleFrame.width * 0.58), 860), 1120)
+        let height = min(max(Int(visibleFrame.height * 0.66), 560), 760)
+        let originX = Int(visibleFrame.midX - CGFloat(width) / 2)
+        let originY = Int(visibleFrame.midY - CGFloat(height) / 2)
+
+        let script = """
+        tell application "System Events"
+            tell process "\(appName)"
+                set frontmost to true
+                if (count of windows) > 0 then
+                    set size of front window to {\(width), \(height)}
+                    set position of front window to {\(originX), \(originY)}
+                end if
+            end tell
+        end tell
+        """
+
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            Logger.wineKit.error("Failed to center Wine window \(error)")
+        }
+    }
+
     private static func wineAppBundleURL() -> URL? {
         var url = wineBinary
         while url.path != "/" {

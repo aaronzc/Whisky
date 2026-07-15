@@ -41,10 +41,15 @@ struct BottleView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVGrid(columns: gridLayout, alignment: .center) {
-                    ForEach(bottle.pinnedPrograms, id: \.id) { pinnedProgram in
-                        PinView(
-                            bottle: bottle, program: pinnedProgram.program, pin: pinnedProgram.pin, path: $path
-                        )
+                    ForEach(bottle.displayPins, id: \.id) { pinItem in
+                        switch pinItem {
+                        case .program(let pin, let program):
+                            PinView(
+                                bottle: bottle, program: program, pin: pin, path: $path
+                            )
+                        case .command(let pin):
+                            CommandPinView(bottle: bottle, pin: pin)
+                        }
                     }
                     PinAddView(bottle: bottle)
                 }

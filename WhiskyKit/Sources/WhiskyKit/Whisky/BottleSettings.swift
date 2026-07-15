@@ -20,14 +20,27 @@ import Foundation
 import SemanticVersion
 import os.log
 
-public struct PinnedProgram: Codable, Hashable, Equatable {
+public enum PinnedProgramKind: String, Codable, Hashable, Equatable, Sendable {
+    case program
+    case command
+}
+
+public struct PinnedProgram: Codable, Hashable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var kind: PinnedProgramKind
     public var name: String
     public var url: URL?
+    public var command: String
+    public var arguments: String
     public var removable: Bool
 
-    public init(name: String, url: URL) {
+    public init(name: String, url: URL, arguments: String = "") {
+        self.id = UUID()
+        self.kind = .program
         self.name = name
         self.url = url
+        self.command = ""
+        self.arguments = arguments
         do {
             let volume = try url.resourceValues(forKeys: [.volumeURLKey]).volume
             self.removable = try !(volume?.resourceValues(forKeys: [.volumeIsInternalKey]).volumeIsInternal ?? false)
@@ -36,11 +49,33 @@ public struct PinnedProgram: Codable, Hashable, Equatable {
         }
     }
 
+    public init(name: String, command: String, arguments: String = "") {
+        self.id = UUID()
+        self.kind = .command
+        self.name = name
+        self.url = nil
+        self.command = command
+        self.arguments = arguments
+        self.removable = false
+    }
+
+    public var isCommand: Bool {
+        kind == .command
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.kind = try container.decodeIfPresent(PinnedProgramKind.self, forKey: .kind) ?? .program
         self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         self.url = try container.decodeIfPresent(URL.self, forKey: .url)
+        self.command = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
+        self.arguments = try container.decodeIfPresent(String.self, forKey: .arguments) ?? ""
         self.removable = try container.decodeIfPresent(Bool.self, forKey: .removable) ?? false
+
+        if self.url == nil, !self.command.isEmpty {
+            self.kind = .command
+        }
     }
 }
 

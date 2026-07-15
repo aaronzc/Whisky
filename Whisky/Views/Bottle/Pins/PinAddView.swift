@@ -19,20 +19,53 @@
 import SwiftUI
 import WhiskyKit
 
+private enum PinSheetDestination: Identifiable {
+    case chooser
+    case program
+    case command
+
+    var id: Int {
+        switch self {
+        case .chooser:
+            return 0
+        case .program:
+            return 1
+        case .command:
+            return 2
+        }
+    }
+}
+
 struct PinAddView: View {
     let bottle: Bottle
-    @State private var showingSheet = false
+    @State private var destination: PinSheetDestination?
 
     var body: some View {
         VStack {
             Button {
-                showingSheet = true
+                destination = .chooser
             } label: {
-                Image(systemName: "plus.circle")
-                    .resizable()
-                    .foregroundStyle(.secondary)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.06)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(
+                            style: StrokeStyle(lineWidth: 1.1, dash: [5, 5])
+                        )
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.plain)
+            .focusable(false)
             .frame(width: 45, height: 45)
             Spacer()
             Text("pin.help")
@@ -41,8 +74,17 @@ struct PinAddView: View {
         }
         .frame(width: 90, height: 90)
         .padding(10)
-        .sheet(isPresented: $showingSheet) {
-            PinCreationView(bottle: bottle)
+        .sheet(item: $destination) { destination in
+            switch destination {
+            case .chooser:
+                PinAddTypeView { selected in
+                    self.destination = selected == .program ? .program : .command
+                }
+            case .program:
+                PinCreationView(bottle: bottle)
+            case .command:
+                CommandPinEditorView(bottle: bottle)
+            }
         }
     }
 }

@@ -20,16 +20,29 @@ import SwiftUI
 import Sparkle
 import WhiskyKit
 
+private final class WhiskyUpdaterDelegate: NSObject, SPUUpdaterDelegate {
+    private let hiddenShortVersionStrings = Set(["EOL"])
+
+    func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
+        let hasVisibleUpdate = appcast.items.contains { item in
+            !hiddenShortVersionStrings.contains(item.displayVersionString)
+        }
+
+        return hasVisibleUpdate ? nil : SUAppcastItem.empty()
+    }
+}
+
 @main
 struct WhiskyApp: App {
     @State var showSetup: Bool = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openURL) var openURL
+    private let updaterDelegate = WhiskyUpdaterDelegate()
     private let updaterController: SPUStandardUpdaterController
 
     init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                         updaterDelegate: nil,
+                                                         updaterDelegate: updaterDelegate,
                                                          userDriverDelegate: nil)
     }
 

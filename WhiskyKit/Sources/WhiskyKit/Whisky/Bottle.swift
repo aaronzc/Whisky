@@ -20,6 +20,18 @@ import Foundation
 import SwiftUI
 import os.log
 
+public enum BottlePinItem: Identifiable {
+    case program(pin: PinnedProgram, program: Program)
+    case command(pin: PinnedProgram)
+
+    public var id: String {
+        switch self {
+        case .program(let pin, _), .command(let pin):
+            return pin.id.uuidString
+        }
+    }
+}
+
 // swiftlint:disable:next todo
 // TODO: Should not be unchecked!
 public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, Comparable, @unchecked Sendable {
@@ -36,10 +48,27 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
     public var pinnedPrograms: [(pin: PinnedProgram, program: Program, // swiftlint:disable:this large_tuple
                                  id: String)] {
         return settings.pins.compactMap { pin in
+            guard !pin.isCommand else { return nil }
             let exists = FileManager.default.fileExists(atPath: pin.url?.path(percentEncoded: false) ?? "")
             guard let program = programs.first(where: { $0.url == pin.url && exists }) else { return nil }
-            return (pin, program, "\(pin.name)//\(program.url)")
+            return (pin, program, pin.id.uuidString)
         }
+    }
+
+    public var displayPins: [BottlePinItem] {
+        settings.pins.compactMap { pin in
+            if pin.isCommand {
+                return .command(pin: pin)
+            }
+
+            let exists = FileManager.default.fileExists(atPath: pin.url?.path(percentEncoded: false) ?? "")
+            guard let program = programs.first(where: { $0.url == pin.url && exists }) else { return nil }
+            return .program(pin: pin, program: program)
+        }
+    }
+
+    public var commandPins: [PinnedProgram] {
+        settings.pins.filter { $0.isCommand && !$0.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     public init(bottleUrl: URL, inFlight: Bool = false, isAvailable: Bool = false) {
@@ -61,6 +90,9 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
         // Get rid of duplicates and pins that reference removed files
         var found: Set<URL> = []
         self.settings.pins = self.settings.pins.filter { pin in
+            if pin.isCommand {
+                return !pin.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             guard let url = pin.url else { return false }
             guard !found.contains(url) else { return false }
             found.insert(url)
